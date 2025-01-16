@@ -213,6 +213,10 @@ jobs:
 
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
 
+          wget https://raw.githubusercontent.com/cvnertnc/susfs4ksu-begonia/refs/heads/kernel-4.14/kernel_patches/atomic64.patch
+
+          patch -p1 --verbose < atomic64.patch
+
           KERNELSU_NEXT_VERSION=$(git -C KernelSU-Next describe --abbrev=0 --tags)
 
           echo -e "\n💡 KernelSU Next version: $KERNELSU_NEXT_VERSION\n"
@@ -249,7 +253,6 @@ jobs:
           patch -d KernelSU-Next -p1 --verbose < SUSFS/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
           patch -p1 --verbose < SUSFS/kernel_patches/50_add_susfs_in_kernel-4.14.patch
           patch -p1 --verbose < SUSFS/kernel_patches/fix-no-root.patch
-          patch -p1 --verbose < SUSFS/kernel_patches/atomic64.patch
 
           echo -e "#Susfs4ksu" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
