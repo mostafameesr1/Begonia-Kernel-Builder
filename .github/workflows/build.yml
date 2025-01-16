@@ -249,6 +249,7 @@ jobs:
           patch -d KernelSU-Next -p1 --verbose < SUSFS/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
           patch -p1 --verbose < SUSFS/kernel_patches/50_add_susfs_in_kernel-4.14.patch
           patch -p1 --verbose < SUSFS/kernel_patches/fix-no-root.patch
+          patch -p1 --verbose < SUSFS/kernel_patches/atomic64.patch
 
           echo -e "#Susfs4ksu" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
