@@ -42,7 +42,7 @@
     "AnyKernel3": {
       "use": true,
       "release": true,
-      "repo": "https://github.com/Neebe3289/AnyKernel3/",
+      "repo": "https://github.com/basamaryan/AnyKernel3",
       "branch": "sweet"
     }
   }
