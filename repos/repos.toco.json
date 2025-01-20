@@ -2,13 +2,13 @@
   {
     "kernelSource": {
       "name": "Astera",
-      "repo": "https://github.com/xiaomi-begonia-dev/android_kernel_xiaomi_mt6785",
-      "branch": "fifteen",
-      "device": "begonia",
-      "defconfig": "begonia_user_defconfig"
+      "repo": "https://github.com/basamaryan/android_kernel_xiaomi_sm6150",
+      "branch": "lineage-22.1",
+      "device": "sweet",
+      "defconfig": "sweet_user_defconfig"
     },
     "withKernelSU": true,
-    "withSUSFS": false,
+    "withSUSFS": true,
     "toolchains": [
       {
         "repo": "https://gitlab.com/PixelOS-Devices/playgroundtc",
@@ -42,7 +42,7 @@
     "AnyKernel3": {
       "use": true,
       "release": true,
-      "repo": "https://github.com/Neebe3289/AnyKernel3/",
+      "repo": "https://github.com/mostafameesr1/AnyKernel3",
       "branch": "begonia"
     }
   }
