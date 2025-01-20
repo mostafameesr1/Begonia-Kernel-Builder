@@ -204,28 +204,38 @@ jobs:
           arch: ${{ steps.generate-args.outputs.ARCH }}
         if: ${{ env.withKernelSU == 'true' }}
         run: |
-          if [ -d "./KernelSU-Next" ]; then
-            rm -rf "./KernelSU-Next"
+          if [ -d "./KernelSU" ]; then
+            rm -rf "./KernelSU"
           fi
           if [ -d "./drivers/kernelsu" ]; then
             rm -rf "./drivers/kernelsu"
           fi
 
-          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-          KERNELSU_NEXT_VERSION=$(git -C KernelSU-Next describe --abbrev=0 --tags)
+          rm -rf KernelSU
+
+          git clone --recursive -j $(nproc) --branch next https://github.com/rifsxd/KernelSU-Next KernelSU
+
+          KERNELSU_NEXT_VERSION=$(git -C KernelSU describe --abbrev=0 --tags)
 
           echo -e "\n💡 KernelSU Next version: $KERNELSU_NEXT_VERSION\n"
 
           echo -e "KERNELSU_NEXT_VERSION=$KERNELSU_NEXT_VERSION" >> $GITHUB_OUTPUT
 
-          echo -e "CONFIG_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-
           echo -e 'CONFIG_KSU=y' >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
 
           cat arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+
+          SUSFS_BRANCH=kernel-4.14
+
+          git clone --recursive -j $(nproc) --branch $SUSFS_BRANCH https://github.com/cvnertnc/susfs4ksu-begonia SUSFS
+
+          SUSFS_REF=$(git -C SUSFS rev-parse --short HEAD)
+          echo -e "SUSFS_REF=$SUSFS_REF" >> $GITHUB_OUTPUT
+          echo -e "SUSFS_BRANCH=$SUSFS_BRANCH" >> $GITHUB_OUTPUT
+
+          patch -p1 < SUSFS/kernel_patches/0001-fs-implement-KernelSU.patch
 
       - name: "🥷 Add SUSFS patches"
         id: add-susfs-patches
@@ -247,12 +257,10 @@ jobs:
           echo -e "SUSFS_REF=$SUSFS_REF" >> $GITHUB_OUTPUT
           echo -e "SUSFS_BRANCH=$SUSFS_BRANCH" >> $GITHUB_OUTPUT
 
-          cp -v SUSFS/kernel_patches/fs/* fs/
-          cp -v SUSFS/kernel_patches/include/linux/* include/linux/
+          patch -d KernelSU -p1 < SUSFS/kernel_patches/0001-KernelSU-Next-Implement-susfs-v1.5.3-plus-non-gki.patch
+          patch -p1 < SUSFS/kernel_patches/0002-fs-Implement-susfs-v1.5.3.patch
 
-          patch -d KernelSU-Next -p1 --verbose < SUSFS/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
-          patch -p1 --verbose < SUSFS/kernel_patches/50_add_susfs_in_kernel-4.14.patch
-
+          echo -e "#Susfs4ksu" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS_SUS_PATH=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
@@ -269,6 +277,7 @@ jobs:
           echo -e "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "#Mountify" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_OVERLAY_FS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_TMPFS_XATTR=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
 
@@ -283,178 +292,14 @@ jobs:
           echo "PATH Variable: $PATH"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
-      - name: Build kernel
-      id: buildKernel
-      run: |
-        export PATH=$(pwd)/toolchains/clang/bin:$PATH
-        export CROSS_COMPILE=$(pwd)/toolchains/gcc-10/bin/aarch64-buildroot-linux-gnu-
-        export CLANG_TRIPLE=aarch64-linux-gnu-
-        export KBUILD_BUILD_USER="rsuntk"
-        export KBUILD_BUILD_HOST="rsuntkOrgs"
-        export BUILD_START=`date`
-        export SELINUX_STATE="Enforcing"
-        export IS_CI=true
-        export LTO="${{ github.event.inputs.LTO }}"
+      - name: "🎶 Build kernel"
+        working-directory: ${{ env.KERNEL_NAME }}
+        env:
+          args: ${{ steps.generate-args.outputs.args }}
+        run: |
+          echo "PATH Variable: $PATH"
+          make ${{ env.args }}
 
-        if [[ "${{ github.event.inputs.LLVM }}" = "true" ]]; then
-          export LLVM=1
-          if [[ "${{ github.event.inputs.LLVM_IAS }}" = "true" ]]; then
-            export LLVM_IAS=1
-          fi
-        fi
-
-        # clone mtk connectivity
-        rm -rf drivers/misc/mediatek/connectivity && cd drivers/misc/mediatek/ && git clone https://github.com/rsuntkOrgs/mtk_connectivity_module --depth=1 -b staging-4.19 connectivity && rm -rf connectivity/.git && cd ../../..
-
-        if [[ "${{ github.event.inputs.TARGET_DEVICE }}" = "a03s" ]]; then
-          export DEFCONFIG="rsuntk-a03s_defconfig"
-          export DEVICE="A037F"
-          export DEVICE_ID="A03s"
-          export TARGET_PRODUCT=a03s
-        elif [[ "${{ github.event.inputs.TARGET_DEVICE }}" = "a04e" ]]; then
-          export DEFCONFIG="rsuntk-a04e_defconfig"
-          export DEVICE="A042F"
-          export DEVICE_ID="A04e"
-          export TARGET_PRODUCT=a04
-        elif [[ "${{ github.event.inputs.TARGET_DEVICE }}" = "m04" ]]; then
-          export DEFCONFIG="rsuntk-m04_defconfig"
-          export DEVICE="M045F"
-          export DEVICE_ID="M04"
-          export TARGET_PRODUCT=a04
-        fi
-
-        BUILD_TARGET="${{ github.event.inputs.BUILD_TARGET }}"
-
-        if [[ "$BUILD_TARGET" != "defconfig" ]]; then
-          export KERNELSU="${{ github.event.inputs.KSU }}"
-        fi
-        
-        bash $(pwd)/build.sh `echo $BUILD_TARGET` --jobs $(nproc --all) `echo $DEFCONFIG`
-
-        if [[ "$BUILD_TARGET" = "kernel" ]]; then
-          if [[ "${{ github.event.inputs.KSU }}" = "true" ]]; then
-          	KSU_REV_COUNT=$(cd KernelSU && git rev-list --count HEAD)
-          	KSU_VERSION=$(expr 10200 + $KSU_REV_COUNT)
-          else
-          	KSU_VERSION="No KernelSU"
-          fi
-          echo "- KernelSU version: $KSU_VERSION"
-          
-          ## CREATE buildDetails.txt
-          printf "Localversion: `./getutsrel`
-          Clang version: `clang -v 2>&1 | grep ' version ' | sed 's/[[:space:]]*$//'`
-          Build: `echo $BUILD_START`
-          Defconfig: `echo $DEFCONFIG`
-          KernelSU: `echo $KSU_VERSION`
-          LTO: `echo $LTO`
-          SELinux: `echo $SELINUX_STATE`
-          " >> buildDetails.txt
-          
-          echo "TITLE=Galaxy `echo $DEVICE_ID` Kernel" >> $GITHUB_ENV
-          
-          echo ""
-          echo "===================================================="
-          strings out/arch/arm64/boot/Image | grep "Linux version"
-          echo "===================================================="
-        fi
-        
-        gitsha1=$(git rev-parse --short HEAD)
-        buildDetails="`make kernelversion`-`echo $DEVICE`_`echo $gitsha1`-`date +'%Y%m%d%H%M%S'`" && echo "buildDetails=$buildDetails" >> $GITHUB_OUTPUT
-        mv out/.config out/build_config.txt
-      working-directory: kernel_root- name: Build kernel
-      id: buildKernel
-      run: |
-        export PATH=$(pwd)/toolchains/clang/bin:$PATH
-        export CROSS_COMPILE=$(pwd)/toolchains/gcc-10/bin/aarch64-buildroot-linux-gnu-
-        export CLANG_TRIPLE=aarch64-linux-gnu-
-        export KBUILD_BUILD_USER="rsuntk"
-        export KBUILD_BUILD_HOST="rsuntkOrgs"
-        export BUILD_START=`date`
-        export SELINUX_STATE="Enforcing"
-        export IS_CI=true
-        export LTO="${{ github.event.inputs.LTO }}"
-
-        if [[ "${{ github.event.inputs.LLVM }}" = "true" ]]; then
-          export LLVM=1
-          if [[ "${{ github.event.inputs.LLVM_IAS }}" = "true" ]]; then
-            export LLVM_IAS=1
-          fi
-        fi
-
-        # clone mtk connectivity
-        rm -rf drivers/misc/mediatek/connectivity && cd drivers/misc/mediatek/ && git clone https://github.com/rsuntkOrgs/mtk_connectivity_module --depth=1 -b staging-4.19 connectivity && rm -rf connectivity/.git && cd ../../..
-
-        if [[ "${{ github.event.inputs.TARGET_DEVICE }}" = "a03s" ]]; then
-          export DEFCONFIG="rsuntk-a03s_defconfig"
-          export DEVICE="A037F"
-          export DEVICE_ID="A03s"
-          export TARGET_PRODUCT=a03s
-        elif [[ "${{ github.event.inputs.TARGET_DEVICE }}" = "a04e" ]]; then
-          export DEFCONFIG="rsuntk-a04e_defconfig"
-          export DEVICE="A042F"
-          export DEVICE_ID="A04e"
-          export TARGET_PRODUCT=a04
-        elif [[ "${{ github.event.inputs.TARGET_DEVICE }}" = "m04" ]]; then
-          export DEFCONFIG="rsuntk-m04_defconfig"
-          export DEVICE="M045F"
-          export DEVICE_ID="M04"
-          export TARGET_PRODUCT=a04
-        fi
-
-        BUILD_TARGET="${{ github.event.inputs.BUILD_TARGET }}"
-
-        if [[ "$BUILD_TARGET" != "defconfig" ]]; then
-          export KERNELSU="${{ github.event.inputs.KSU }}"
-        fi
-        
-        bash $(pwd)/build.sh `echo $BUILD_TARGET` --jobs $(nproc --all) `echo $DEFCONFIG`
-
-        if [[ "$BUILD_TARGET" = "kernel" ]]; then
-          if [[ "${{ github.event.inputs.KSU }}" = "true" ]]; then
-          	KSU_REV_COUNT=$(cd KernelSU && git rev-list --count HEAD)
-          	KSU_VERSION=$(expr 10200 + $KSU_REV_COUNT)
-          else
-          	KSU_VERSION="No KernelSU"
-          fi
-          echo "- KernelSU version: $KSU_VERSION"
-          
-          ## CREATE buildDetails.txt
-          printf "Localversion: `./getutsrel`
-          Clang version: `clang -v 2>&1 | grep ' version ' | sed 's/[[:space:]]*$//'`
-          Build: `echo $BUILD_START`
-          Defconfig: `echo $DEFCONFIG`
-          KernelSU: `echo $KSU_VERSION`
-          LTO: `echo $LTO`
-          SELinux: `echo $SELINUX_STATE`
-          " >> buildDetails.txt
-          
-          echo "TITLE=Galaxy `echo $DEVICE_ID` Kernel" >> $GITHUB_ENV
-          
-          echo ""
-          echo "===================================================="
-          strings out/arch/arm64/boot/Image | grep "Linux version"
-          echo "===================================================="
-        fi
-        
-        gitsha1=$(git rev-parse --short HEAD)
-        buildDetails="`make kernelversion`-`echo $DEVICE`_`echo $gitsha1`-`date +'%Y%m%d%H%M%S'`" && echo "buildDetails=$buildDetails" >> $GITHUB_OUTPUT
-        mv out/.config out/build_config.txt
-      working-directory: kernel_root
-      
-    - name: Upload config
-      uses: actions/upload-artifact@v4
-      with:
-        name: Config-${{ steps.buildKernel.outputs.buildDetails }}
-        path: kernel_root/out/build_config.txt
-        
-    - name: Upload artifacts
-      if: github.event.inputs.BUILD_TARGET == 'kernel'
-      uses: actions/upload-artifact@v4
-      with:
-        name: Build-${{ steps.buildKernel.outputs.buildDetails }}
-        path: |
-          kernel_root/out/arch/arm64/boot/*.gz
-          kernel_root/out/arch/arm64/boot/dts/mediatek/*.dtb
 
       - name: "💛 Upload Image"
         uses: actions/upload-artifact@v3
